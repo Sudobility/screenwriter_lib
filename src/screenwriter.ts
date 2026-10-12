@@ -31,6 +31,11 @@ import {
 } from "./flows/import-export";
 import { createAiFlow, type AiFlow, type AiFlowOptions } from "./flows/ai";
 import { createApiKeysFlow, type ApiKeysFlow } from "./flows/api-keys";
+import { createCharacterImagesFlow, type CharacterImagesFlow } from "./character-images";
+import { createLocationImagesFlow, type LocationImagesFlow } from "./location-images";
+import { createPropImagesFlow, type PropImagesFlow } from "./prop-images";
+import { createProductionImagesFlow, type ProductionImagesFlow } from "./production-images";
+import type { ProductionImageKind } from "@sudobility/screenwriter_types";
 import type { DocumentSession } from "./session/types";
 
 export interface ScreenwriterConfig {
@@ -57,6 +62,10 @@ export interface Screenwriter {
   readonly importExport: ImportExportFlow;
   /** A review-and-polish flow for one document. The caller owns it: `dispose()` when done. */
   createAi(documentId: string, options?: AiFlowOptions): AiFlow;
+  createCharacterImages(documentId: string, characterId: string): CharacterImagesFlow;
+  createLocationImages(documentId: string, locationId: string): LocationImagesFlow;
+  createPropImages(documentId: string, propId: string): PropImagesFlow;
+  createProductionImages(documentId: string, kind: ProductionImageKind, subjectId: string): ProductionImagesFlow;
   /** Personal API keys for the signed-in user's personal entity. The caller owns it: `dispose()` when done. */
   createApiKeys(): ApiKeysFlow;
   readonly stores: {
@@ -146,6 +155,10 @@ export function createScreenwriter(config: ScreenwriterConfig): Screenwriter {
     client,
     sync,
     importExport,
+    createCharacterImages: (documentId, characterId) => createCharacterImagesFlow(client, documentId, characterId),
+    createLocationImages: (documentId, locationId) => createLocationImagesFlow(client, documentId, locationId),
+    createPropImages: (documentId, propId) => createPropImagesFlow(client, documentId, propId),
+    createProductionImages: (documentId, kind, subjectId) => createProductionImagesFlow(client, documentId, kind, subjectId),
     auth,
     offline,
     createAi: (documentId, options) =>

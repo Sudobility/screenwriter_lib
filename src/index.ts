@@ -11,4 +11,8 @@ export * from "./flows/import-export";
 export * from "./flows/ai";
 export * from "./flows/api-keys";
 export * from "./screenwriter";
+export * from "./character-images";
+export * from "./location-images";
+export * from "./prop-images";
+export * from "./production-images";
 export * from "./react";
