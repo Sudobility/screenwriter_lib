@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/screenwriter_lib",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Business logic for Fadewright: stores, document session with per-user undo and epoch rebase, ports",
   "type": "module",
   "main": "./dist/index.js",
