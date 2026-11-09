@@ -1,10 +1,18 @@
 # screenwriter_lib
 
-Frontend business-logic library for ViaInk. Slice F2 of `../screenwriter_plans/plans/2026-09-20-frontend-mvp.md`. Sits between `screenwriter_client` (network, sync socket) and the UI. **No UI code.** Local package: no publishing, no versions, no CI workflow; consumers import it by path (`tsconfig` `paths` + Vite alias to `../screenwriter_lib/src/index.ts`).
+Frontend business-logic library for **Fadewright** (`@sudobility/screenwriter_lib`). Sits between
+`screenwriter_client` (REST + Yjs sync socket) and the UI. **No UI code.**
+
+Published to **GitHub Packages** (version in `package.json`, currently 0.1.x); CI/CD in
+`.github/workflows/ci-cd.yml`. `.npmrc` routes `@sudobility` to `npm.pkg.github.com` (auth token lives
+in `~/.npmrc`, not here).
 
 ## Tech stack
 
-Bun, TypeScript (ESM, `moduleResolution: bundler`), zustand (vanilla stores), React 19 (peer), Yjs V2, Vitest. Depends on `writing_core` (document engine), `screenwriter_client`, `screenwriter_types` by path.
+Bun, TypeScript (ESM, `moduleResolution: bundler`, `verbatimModuleSyntax`, TS 6), zustand (vanilla
+stores), React 19 (peer), Yjs V2, Vite 8 (library build), Vitest 4. Runtime deps on
+`@sudobility/{writing_core, screenwriter_client, screenwriter_types}` + `yjs`; peers: `react`,
+`zustand`, `@tanstack/react-query`.
 
 ## Structure
 
@@ -13,53 +21,91 @@ src/
   index.ts          barrel
   ports/            AuthPort, OfflineDocStore + InMemoryOfflineDocStore
   auth/dev-auth.ts  DevAuthPort (token dev:<uid>:<email>, uid = deterministic hash of the email)
-  stores/           vanilla zustand stores made by factories over a (fakeable) client: auth, projects, documents, templates
-  session/          DocumentSession: types.ts (public API), document-session.ts (the core), emitter.ts
-  screenwriter.ts   createScreenwriter({network, baseUrl, auth, offline, sync?, session?}): wires client + SyncClient + stores + session factory
-  flows/import-export.ts  createImportExportFlow: importScript(projectId,{filename,bytes}) / exportDocument(id, format) (bytes in, bytes out; export first waits for the open session to settle); on `Screenwriter.importExport`
-  react/            ScreenwriterProvider, useScreenwriter, useAuth/useProjects/useDocuments/useTemplates/useDocumentSession (thin)
-tests/              stores + DevAuth (fake client), hooks (fake network), session.integration (spawns the REAL API)
+  stores/           vanilla zustand store factories over a (fakeable) client: auth, projects, documents, templates
+  session/          DocumentSession: types.ts (public API), document-session.ts (core), emitter.ts
+  screenwriter.ts   createScreenwriter(config): wires client + SyncClient + stores + all flow factories
+  flows/import-export.ts  importScript / exportDocument (bytes in, bytes out; export waits for the open session to settle)
+  flows/ai.ts       createAiFlow: review/polish, suggestions, coverage report (see AI flow)
+  flows/api-keys.ts createApiKeysFlow: personal API keys list/create(one-time secret)/revoke
+  {character,location,prop,production}-images.ts  doc-scoped image generate/upload/get flows (thin over client)
+  react/            ScreenwriterProvider, useScreenwriter, use{Auth,Projects,Documents,Templates,DocumentSession,ImportExport,Ai,ApiKeys}
+tests/              *.test.ts hermetic (fake client/network); *.integration.test.ts spawn the REAL API
 ```
 
 ## Commands
 
-- `bun install`; `bun run typecheck` (`bunx tsc --noEmit`); `bunx vitest run` (never `bun test`).
-- `tests/session.integration.test.ts` spawns `bun run src/index.ts` in `../screenwriter_api` on a random port (`AI_TEST_MODE=1`, `postgres://localhost:5432/screenwriter_test`; the API creates its tables at boot). Never use `screenwriter_dev`. Needs local Postgres.
+- `bun install`; `bun run typecheck` (tsc --noEmit); `bun run test:unit` (hermetic, what CI runs);
+  `bun run build`; `bun run clean`. Run tests with Vitest only, never `bun test`.
+- `bun run test:integration` (LOCAL DEV ONLY, never CI): `tests/*.integration.test.ts` spawn
+  `../screenwriter_api` as a child process on a random port (`AI_TEST_MODE=1`,
+  `postgres://localhost:5432/screenwriter_test`; the API creates its tables at boot). Needs the sibling
+  repo checked out and local Postgres. Never use `screenwriter_dev`.
+- Two Vitest configs share aliases via `vitest.shared.ts`: `vitest.config.ts` (unit, excludes
+  `*.integration.test.ts`) and `vitest.integration.config.ts` (`fileParallelism: false`).
+
+## Build
+
+`vite build` (lib mode) → one bundled ESM `dist/index.js`, all real deps **external** (yjs especially:
+bundling it would create a second Yjs instance). Then `tsc -p tsconfig.build.json` emits `.d.ts` only
+(its `paths: {}` forces declarations to resolve against real npm deps, not local sibling source). Then
+`scripts/fix-esm-imports.mjs` rewrites relative specifiers to explicit `.js`/`index.js` paths for
+Node's native ESM loader.
+
+## Dependency resolution (local dev vs published)
+
+tsconfig `paths` and `vitest.shared.ts` map the `@sudobility/*` deps + `yjs`/`lib0` to local sibling
+source, **but only when the sibling is actually checked out** (each alias is guarded by `existsSync`).
+Absent siblings (and CI, which checks out only this repo) fall through to the published npm packages.
+Keep tsconfig `paths` and `vitest.shared.ts` in sync.
 
 ## AI flow
 
-`flows/ai.ts` `createAiFlow(client, documentId, {pollMs})` (also `Screenwriter.createAi(documentId)`; the react hook is `useAi(documentId)`): status, `startReview()`, `startPolish({sceneIds})`, polling of the current job, the last coverage report (read back from the document's recent jobs on `refresh()`), the pending suggestion set, `accept(ids)` / `acceptAll()` / `reject(ids?)`. A refused accept resolves as `{ok:false, reason:'stale', suggestionIds}` (not an error); `describeAiError(code)` gives plain-language text for `AI_OUTPUT_INVALID`, `AI_UNAVAILABLE`, `JOB_ALREADY_RUNNING`, `RATE_LIMITED`, `AI_KEY_NOT_PERMITTED` and others. A new run clears what the last one of its kind left, once the API has accepted it: a review clears the report (so an old one is never shown while the new one runs or after it fails), a polish clears the suggestion set and rejects its undecided suggestions on the server; `refresh()` shows the LATEST review's report only if that review succeeded. Timers only, no browser APIs.
-
-## Ports
-
-- `AuthPort`: `currentUser`, `signIn`, `signOut`, `getToken(forceRefresh)`, `onChange`. The app implements Firebase; `DevAuthPort` is for local dev (API must run with `AI_TEST_MODE=1`).
-- `useImportExport()` (react): `{formats, importing, exporting, error, importScript, exportDocument}`; failures resolve `null` and set `error` (an `ApiError` with `code`/`details`). No `File`/`Blob` in the lib: the app reads the file and does the download.
-- `OfflineDocStore`: `load/save/delete` of `{epoch, state (Yjs V2)}` per document id. The IndexedDB adapter is the app's job.
-- `createScreenwriter` builds the `ScreenwriterClient` and one `SyncClient` (per instance = per device). `openDocumentSession` on it is reference counted: one live session per document, real close when every holder has called `close()` once.
+`createAiFlow(client, documentId, {pollMs})` (`Screenwriter.createAi`; hook `useAi`): status,
+`startReview()`, `startPolish({sceneIds})`, polling of the current job, the last coverage report
+(read back from the document's recent jobs on `refresh()`), the pending suggestion set,
+`accept(ids)`/`acceptAll()`/`reject(ids?)`. A refused accept resolves `{ok:false, reason:'stale',
+suggestionIds}` (not an error); `describeAiError(code)` maps `AI_OUTPUT_INVALID`, `AI_UNAVAILABLE`,
+`JOB_ALREADY_RUNNING`, `RATE_LIMITED`, `AI_KEY_NOT_PERMITTED`, … A new run clears what the last one of
+its kind left once the API accepts it: a review clears the old report; a polish clears the suggestion
+set and rejects its undecided suggestions server-side. `refresh()` shows the latest review's report only
+if that review succeeded. Timers only, no browser APIs. API keys: the just-created secret
+(`revealed`) lives only in flow state until `dismissReveal()` — never stored or logged.
 
 ## Session lifecycle (`openDocumentSession`)
 
-1. `client.getDocument` (epoch, role, template summary). Network failure plus an offline copy = open offline from the copy.
-2. New `Y.Doc`; apply the offline copy if its epoch equals the server epoch (older-epoch copies are dropped).
-3. `sync.subscribe(id, doc, {epoch})`, wait for `synced` (timeout 10 s; with an offline copy it then opens anyway).
-4. `openDocument(doc, deps, {repair: false})` (repair is a write; never on the client). `createSessionUndo` per session: `undo()/redo()` only touch this session's own origins.
-5. `execute(commands, {kind, groupKey})` runs `executeBatch` with this user's origin (`origins.make`); viewers/commenters are read-only.
+1. `client.getDocument` (epoch, role, template summary). Network failure + an offline copy = open offline.
+2. New `Y.Doc`; apply the offline copy only if its epoch equals the server epoch (older-epoch copies dropped).
+3. `sync.subscribe(id, doc, {epoch})`, wait for `synced` (timeout 10 s; with an offline copy, open anyway).
+4. `openDocument(doc, deps, {repair: false})` (repair is a write; never on the client). `createSessionUndo`
+   per session: `undo()/redo()` touch only this session's own origins.
+5. `execute(commands, {kind, groupKey})` runs `executeBatch` with this user's origin (`origins.make`);
+   viewers/commenters are read-only.
 6. Every doc update schedules a debounced save to the offline store; `close()` flushes.
-7. **Rebase** on the client's `epochChanged`: fetch `GET /documents/:did/state`; compare the old doc's state vector with (newest server `pre-open`/`pre-restore` snapshot vector + the new live state's vector); anything beyond both = lost local edits; save a copy in the offline store under `<docId>#lost@<epoch>@<ts>`; replace doc, model and undo; resubscribe at the live epoch; emit `change(null)` then `rebased {fromEpoch, toEpoch, lostLocalEdits, preservedKey}`. The client's `unackedCount` resets on disconnect, so it is NOT used for this. Undo history is cleared by a rebase. Read `session.model` fresh after `rebased`.
-8. Presence: `setLocalCursor(x)` publishes `{user, cursor: x}` through awareness; `remoteCursors` is a map of `{clientId, user, cursor}`.
-9. Snapshots: `listSnapshots`, `createSnapshot(name, note)` (waits for acks, generates `clientSnapshotId`), `openSnapshot(id)` (API call, then waits for this session's rebase), `forkSnapshot`, `listVersions`, `restoreVersion`.
-
-## Single Yjs (important)
-
-`yjs` and `lib0` resolve to `../writing_core/node_modules/` via a two-entry `paths` mapping (extensionless `dist/yjs` first so Bun loads `yjs.mjs`, then the directory for types). `vitest.config.ts` mirrors it as aliases; keep both in sync. An app bundler needs an alias plus `resolve.dedupe: ['yjs','lib0']`. The integration test asserts `session.model.doc instanceof Y.Doc` with the test's own import.
+7. **Rebase** on the client's `epochChanged`: fetch `GET /documents/:did/state`; compare the old doc's
+   state vector with (newest server `pre-open`/`pre-restore` snapshot vector + the new live state's
+   vector); anything beyond both = lost local edits; save a copy under `<docId>#lost@<epoch>@<ts>`;
+   replace doc, model and undo; resubscribe at the live epoch; emit `change(null)` then
+   `rebased {fromEpoch, toEpoch, lostLocalEdits, preservedKey}`. `unackedCount` resets on disconnect, so
+   it is NOT used for this. Undo history is cleared by a rebase. Read `session.model` fresh after `rebased`.
+8. Presence: `setLocalCursor(x)` publishes `{user, cursor: x}` via awareness; `remoteCursors` maps
+   `{clientId, user, cursor}`.
+9. Snapshots: `listSnapshots`, `createSnapshot(name, note)` (waits for acks, generates
+   `clientSnapshotId`), `openSnapshot(id)` (API call, then waits for this session's rebase),
+   `forkSnapshot`, `listVersions`, `restoreVersion`.
 
 ## Gotchas
 
-- One `SyncClient` holds one subscription per document id: two sessions on one document need two `createScreenwriter` instances (that is what two devices are).
-- The API's `createSnapshot` pins the server's live state; a client cannot upload its own state (see the offline-edits gap).
-- `writing_core`'s command registry is a process-wide singleton; `registerBuiltinCommands()` is idempotent and is called on import of `session/`.
-- React: `screenwriter_client`'s hooks import their own `react`; the app must dedupe `react`/`react-dom` (Vite `resolve.dedupe`).
+- One `SyncClient` holds one subscription per document id: two sessions on one document need two
+  `createScreenwriter` instances (that is what two devices are). `openDocumentSession` is reference
+  counted: one live session per document; real close only when every holder has called `close()`.
+- The API's `createSnapshot` pins the server's live state; a client cannot upload its own state (the
+  offline-edits gap).
+- `writing_core`'s command registry is a process-wide singleton; `registerBuiltinCommands()` is
+  idempotent and runs on import of `session/`.
+- React: `screenwriter_client`'s hooks import their own `react`; apps must dedupe `react`/`react-dom`
+  and `yjs`/`lib0` (bundler alias + `resolve.dedupe`).
 
 ## Related
 
-`../writing_core`, `../screenwriter_client`, `../screenwriter_types`, `../screenwriter_api`, `../sudojo_lib` (convention reference), `../screenwriter_plans`.
+`../writing_core`, `../screenwriter_client`, `../screenwriter_types`, `../screenwriter_api`,
+`../sudojo_lib` (convention reference), `../screenwriter_plans`.
