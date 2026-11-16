@@ -41,7 +41,7 @@ export function createProjectsStore(client: ProjectsClient, getEntityId: () => P
         run(async () => {
           const trashed = opts?.trashed ?? false;
           const page = await client.listProjects(await getEntityId(), { trashed });
-          set({ items: page.items, showingTrash: trashed });
+          set({ items: page.data ?? [], showingTrash: trashed });
         }),
       async create(input) {
         let created: ProjectSummary | null = null;

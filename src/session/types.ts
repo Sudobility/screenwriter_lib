@@ -3,7 +3,7 @@ import type { ConnectionStatus } from "@sudobility/screenwriter_client";
 import type {
   DocumentDetail,
   DocumentMeta,
-  Paginated,
+  PaginatedResponse,
   SnapshotCreateResponse,
   SnapshotListResponse,
   SnapshotOpenResponse,
@@ -92,7 +92,7 @@ export interface DocumentSession {
   /** Replaces the live document with the snapshot; resolves once this session has rebased onto it. */
   openSnapshot(snapshotId: string): Promise<SnapshotOpenResponse>;
   forkSnapshot(snapshotId: string, title: string, targetProjectId?: string): Promise<DocumentMeta>;
-  listVersions(): Promise<Paginated<VersionListItem>>;
+  listVersions(): Promise<PaginatedResponse<VersionListItem>>;
   restoreVersion(versionId: string): Promise<VersionRestoreResponse>;
 
   /** Resolves true once this session is synced and every local edit is acknowledged (false on timeout). */

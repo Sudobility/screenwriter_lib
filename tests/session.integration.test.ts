@@ -150,7 +150,7 @@ describe("document sessions", () => {
     await waitFor("A sees post-rebase B", () => has(sa, "post-rebase B"));
     await waitFor("converged", () => same(sa.model.doc, sb.model.doc));
 
-    expect((await sa.listVersions()).items.length).toBeGreaterThan(0);
+    expect((await sa.listVersions()).data!.length).toBeGreaterThan(0);
     const fork = await sa.forkSnapshot(snap.id, "Pilot (fork)");
     expect(fork.id).not.toBe(docId);
     expect(fork.parentSnapshotId).toBe(snap.id);

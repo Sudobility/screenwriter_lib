@@ -14,7 +14,7 @@ const ok = (data: unknown) => ({
 const network: NetworkClient = {
   async request(req) {
     if (req.url.endsWith("/me")) return ok({ userId: "u", email: "a@b.co", personalEntityId: "w1" });
-    if (req.url.includes("/entities/w1/projects")) return ok({ items: [{ id: "prj_1", name: "One" }], nextCursor: null });
+    if (req.url.includes("/entities/w1/projects")) return ok([{ id: "prj_1", name: "One" }]);
     return { status: 404, headers: {}, body: new TextEncoder().encode("{}") };
   },
 };

@@ -49,7 +49,7 @@ export function createDocumentsStore(client: DocumentsClient): DocumentsStore {
         run(pid, async () => {
           const trashed = opts?.trashed ?? false;
           const page = await client.listDocuments(pid, { trashed });
-          patch(pid, { items: page.items, showingTrash: trashed });
+          patch(pid, { items: page.data ?? [], showingTrash: trashed });
         }),
       async create(pid, input) {
         let created: DocumentMeta | null = null;

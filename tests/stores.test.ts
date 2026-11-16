@@ -58,7 +58,7 @@ describe("stores over a fake client", () => {
 
   it("projects: list, create, trash, restore, error", async () => {
     const client: ProjectsClient = {
-      listProjects: vi.fn(async (_w, q) => ({ items: q?.trashed ? [project("t1")] : [project("p1")], nextCursor: null }) as never),
+      listProjects: vi.fn(async (_w, q) => ({ success: true, data: q?.trashed ? [project("t1")] : [project("p1")], timestamp: "2026-01-01T00:00:00.000Z", pagination: { hasNextPage: false, nextCursor: null, pageSize: 1 } }) as never),
       createProject: vi.fn(async (_w, b) => project(b.name)),
       trashProject: vi.fn(async () => ({ trashedAt: "x" })),
       restoreProject: vi.fn(async () => project("t1")),
@@ -81,7 +81,7 @@ describe("stores over a fake client", () => {
 
   it("documents: create from a template sends a client doc id and the template", async () => {
     const client: DocumentsClient = {
-      listDocuments: vi.fn(async () => ({ items: [], nextCursor: null }) as never),
+      listDocuments: vi.fn(async () => ({ success: true, data: [], timestamp: "2026-01-01T00:00:00.000Z", pagination: { hasNextPage: false, nextCursor: null, pageSize: 0 } }) as never),
       createDocument: vi.fn(async (_p, b) => ({ id: b.id, title: b.title }) as never),
       trashDocument: vi.fn(async () => ({ trashedAt: "x" })),
       restoreDocument: vi.fn(async () => ({}) as never),
