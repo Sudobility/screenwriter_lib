@@ -391,6 +391,9 @@ export async function openDocumentSession(
     execute(commands: readonly CommandInvocation[], opts: ExecuteOptions = {}): BatchResult {
       if (phase !== "live") return { ok: false, index: -1, reason: "readOnly", detail: { why: phase } };
       const role = detail?.role;
+      // Unified owner/manager/member model: only owners and managers edit; members are
+      // read-only (the former comment-only / view-only tiers were collapsed away).
+      const canEdit = role === "owner" || role === "manager";
       const origin = origins.make(opts.kind ?? "local-command", opts.groupKey ? { groupKey: opts.groupKey } : {});
       return executeBatch({
         doc,
@@ -398,10 +401,10 @@ export async function openDocumentSession(
         commands,
         actor,
         origin,
-        capabilities: new Set<Capability>(role === "viewer" ? [] : role === "commenter" ? ["comment"] : ["write", "comment"]),
+        capabilities: new Set<Capability>(canEdit ? ["write", "comment"] : []),
         ids,
         clock,
-        ...(role === "viewer" || role === "commenter" ? { readOnly: true } : {}),
+        ...(canEdit ? {} : { readOnly: true }),
       });
     },
     undo: () => phase === "live" && undo.undo(),
