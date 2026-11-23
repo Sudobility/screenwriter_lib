@@ -391,9 +391,12 @@ export async function openDocumentSession(
     execute(commands: readonly CommandInvocation[], opts: ExecuteOptions = {}): BatchResult {
       if (phase !== "live") return { ok: false, index: -1, reason: "readOnly", detail: { why: phase } };
       const role = detail?.role;
-      // Unified owner/manager/member model: only owners and managers edit; members are
-      // read-only (the former comment-only / view-only tiers were collapsed away).
+      // Owner/manager/member model: owners and managers edit; a member is comment-only — they may run
+      // note.add/note.reply (the `comment` capability) but not edit the script or triage comments
+      // (note.setStatus/note.delete require `write`). `none` (no access) executes nothing.
       const canEdit = role === "owner" || role === "manager";
+      const canComment = canEdit || role === "member";
+      const capabilities = new Set<Capability>(canEdit ? ["write", "comment"] : canComment ? ["comment"] : []);
       const origin = origins.make(opts.kind ?? "local-command", opts.groupKey ? { groupKey: opts.groupKey } : {});
       return executeBatch({
         doc,
@@ -401,10 +404,12 @@ export async function openDocumentSession(
         commands,
         actor,
         origin,
-        capabilities: new Set<Capability>(canEdit ? ["write", "comment"] : []),
+        capabilities,
         ids,
         clock,
-        ...(canEdit ? {} : { readOnly: true }),
+        // A comment-only member is not globally read-only (that would refuse their note commands); the
+        // capability set is what gates them to comment commands.
+        ...(canComment ? {} : { readOnly: true }),
       });
     },
     undo: () => phase === "live" && undo.undo(),

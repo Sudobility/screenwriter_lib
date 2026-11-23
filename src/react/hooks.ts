@@ -220,7 +220,9 @@ export function useImportExport(): UseImportExport {
 
 export interface UseAi extends AiState {
   startReview: AiFlow["startReview"];
+  startFocusedReview: AiFlow["startFocusedReview"];
   startPolish: AiFlow["startPolish"];
+  startTrim: AiFlow["startTrim"];
   cancel: AiFlow["cancel"];
   accept: AiFlow["accept"];
   acceptAll: AiFlow["acceptAll"];
@@ -244,7 +246,9 @@ export function useAi(documentId: string): UseAi {
   return {
     ...state,
     startReview: f.startReview,
+    startFocusedReview: f.startFocusedReview,
     startPolish: f.startPolish,
+    startTrim: f.startTrim,
     cancel: f.cancel,
     accept: f.accept,
     acceptAll: f.acceptAll,

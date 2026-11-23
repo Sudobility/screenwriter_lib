@@ -4,6 +4,7 @@ import type {
   AiScope,
   AiStatus,
   CoverageReport,
+  ReviewKind,
   SuggestionSet,
 } from "@sudobility/screenwriter_types";
 import { isApiError, type ScreenwriterClient } from "@sudobility/screenwriter_client";
@@ -77,6 +78,11 @@ export interface AiState {
   suggestionSet: SuggestionSet | null;
   /** A polish run that finished with nothing worth changing. */
   polishFoundNothing: boolean;
+  /**
+   * The outcome of the last focused review (`review` task): its findings were written straight into the
+   * document as `pending` comments, so there is nothing to display inline — only a summary of what ran.
+   */
+  reviewResult: { reviewKind: ReviewKind; count: number; summary: string | null; verdict: "recommend" | "consider" | "pass" | null; verdictRationale: string | null } | null;
   deciding: boolean;
   /** Suggestion ids the last accept refused as stale (the set also marks them `stale`). */
   staleSuggestionIds: string[];
@@ -93,8 +99,15 @@ export interface AiFlow {
    * far (refused with `SCENE_SUMMARIES_MISSING` while a scene before it has no summary).
    */
   startReview(options?: AiJobCreateRequest["options"], scope?: AiScope): Promise<void>;
+  /**
+   * Run a focused review of one `kind` (character, pacing, visual, continuity, loose-end, …) over the whole
+   * script or a `scope`. Its findings are written into the document as `pending` comments (see `reviewResult`).
+   */
+  startFocusedReview(kind: ReviewKind, scope?: AiScope, options?: AiJobCreateRequest["options"]): Promise<void>;
   /** Polish dialogue in the given scope (max 8 scenes). */
   startPolish(scope: AiScope, options?: AiJobCreateRequest["options"]): Promise<void>;
+  /** Trim the whole script (or a scope) for length: shorter-line suggestions to accept or reject. */
+  startTrim(scope?: AiScope, options?: AiJobCreateRequest["options"]): Promise<void>;
   cancel(): Promise<void>;
   accept(suggestionIds: string[]): Promise<AcceptResult>;
   /** Accept every suggestion still pending in the set. */
@@ -124,6 +137,7 @@ export function createAiFlow(client: AiFlowClient, documentId: string, options: 
     reportCreatedAt: null,
     suggestionSet: null,
     polishFoundNothing: false,
+    reviewResult: null,
     deciding: false,
     staleSuggestionIds: [],
     error: null,
@@ -152,6 +166,9 @@ export function createAiFlow(client: AiFlowClient, documentId: string, options: 
     if (job.status !== "succeeded" || !job.result) return;
     if (job.result.kind === "report") {
       set({ report: job.result.report, reportCreatedAt: job.finishedAt ?? job.createdAt });
+    } else if (job.result.kind === "review") {
+      const r = job.result;
+      set({ reviewResult: { reviewKind: r.reviewKind, count: r.count, summary: r.summary, verdict: r.verdict, verdictRationale: r.verdictRationale } });
     } else if (job.result.suggestionSetId) {
       try {
         await loadSet(job.result.suggestionSetId);
@@ -186,6 +203,7 @@ export function createAiFlow(client: AiFlowClient, documentId: string, options: 
    */
   async function clearPrevious(task: AiJobCreateRequest["task"]) {
     if (task === "coverage") return set({ report: null, reportCreatedAt: null });
+    if (task === "review") return set({ reviewResult: null });
     const old = state.suggestionSet;
     set({ suggestionSet: null, staleSuggestionIds: [], polishFoundNothing: false });
     if (old?.suggestions.some(x => x.status === "pending")) await client.rejectSuggestions(old.id).catch(() => undefined);
@@ -249,7 +267,10 @@ export function createAiFlow(client: AiFlowClient, documentId: string, options: 
     },
 
     startReview: (options, scope) => start({ task: "coverage", ...(scope ? { scope } : {}), ...(options ? { options } : {}) }),
+    startFocusedReview: (kind, scope, options) =>
+      start({ task: "review", ...(scope ? { scope } : {}), options: { ...(options ?? {}), reviewKind: kind } }),
     startPolish: (scope, options) => start({ task: "polish.dialogue", scope, ...(options ? { options } : {}) }),
+    startTrim: (scope, options) => start({ task: "trim", ...(scope ? { scope } : {}), ...(options ? { options } : {}) }),
 
     async cancel() {
       const job = state.job;
