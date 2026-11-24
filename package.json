@@ -1,6 +1,6 @@
 {
   "name": "@sudobility/screenwriter_lib",
-  "version": "0.1.27",
+  "version": "0.1.28",
   "description": "Business logic for Fadewright: stores, document session with per-user undo and epoch rebase, ports",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,7 +25,7 @@
     "CLAUDE.md"
   ],
   "dependencies": {
-    "@sudobility/screenwriter_client": "^0.1.27",
+    "@sudobility/screenwriter_client": "^0.1.28",
     "@sudobility/screenwriter_types": "^0.1.25",
     "@sudobility/writing_core": "^0.1.9",
     "yjs": "~13.6.33"
